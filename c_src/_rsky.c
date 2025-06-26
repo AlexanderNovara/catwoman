@@ -3,22 +3,22 @@
  *
  * This program incorporates a modified version of the batman package: fast computation of exoplanet transit light curves
  * Copyright (C) 2015 Laura Kreidberg
- * 
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
+#define NPY_NO_DEPRECATED_API NPY_2_0_API_VERSION
 #include <Python.h>
 #include "numpy/arrayobject.h"
 
@@ -48,15 +48,23 @@ inline double getE(double M, double e)	//calculates the eccentric anomaly (see S
 {
 	double E = M, eps = 1.0e-7;
 	double fe, fs;
+  int ii, maxiter = 1000;
 
 	// modification from LK 05/07/2017:
 	// add fmod to ensure convergence for diabolical inputs (following Eastman et al. 2013; Section 3.1)
-	while(fmod(fabs(E - e*sin(E) - M), 2.*M_PI) > eps)
+  ii = 0;
+	while ((fmod(fabs(E - e*sin(E) - M), 2.*M_PI) > eps) & (ii < maxiter))
 	{
 		fe = fmod(E - e*sin(E) - M, 2.*M_PI);
 		fs = fmod(1 - e*cos(E), 2.*M_PI);
 		E = E - fe/fs;
+    ii++;
 	}
+  if (ii >= maxiter)
+  {
+    PyErr_SetString(PyExc_RuntimeError, "Eccentric anomaly computation reached the maximum number of interations");
+    return E;
+  }
 	return E;
 }
 
@@ -103,12 +111,26 @@ static PyObject *_rsky_or_f(PyObject *self, PyObject *args, int f_only)
 	for(int i = 0; i < dims[0]; i++)
 	{
 		double t = t_array[i];
-		
+
 
 		//calculates time of periastron passage from time of inferior conjunction
-		double f = M_PI/2. - omega;								//true anomaly corresponding to time of primary transit center
-		double E = 2.*atan(sqrt((1. - ecc)/(1. + ecc))*tan(f/2.));				//corresponding eccentric anomaly
-		double M = E - ecc*sin(E);
+		double f = M_PI/2. - omega;							//true anomaly corresponding to time of primary transit center
+		double E;
+		double M;
+
+        // The true (f), eccentric (E) and mean (M) anomaly are all equal for a circular orbit
+        // Follows from general formulas (see also: https://luger.dev/starry/v0.3.0/tutorials/basics3.html)
+		if(ecc < 1.0e-5)
+		{
+			E = f;
+			M = f;
+		}
+		else
+		{
+			E = 2.*atan(sqrt((1. - ecc)/(1. + ecc))*tan(f/2.));				//corresponding eccentric anomaly
+			M = E - ecc*sin(E);
+		}
+
 		double tp = tc - per*M/2./M_PI;							//time of periastron
 
 		if(ecc < 1.0e-5)
@@ -125,11 +147,11 @@ static PyObject *_rsky_or_f(PyObject *self, PyObject *args, int f_only)
 		r = a* (1-ecc*cos(E));
 		psi = atan((-1/tan(omega+f))*cos(inc));
 		Y = -r*sin(omega+f)*cos(inc);
-		X = -r*cos(omega+f);		
+		X = -r*cos(omega+f);
 		output_array[i+dims[0]]=Y;
                 output_array[i+2*dims[0]]=psi;
 		output_array[i+3*dims[0]]=X;
-	
+
 		if (f_only) {
 			output_array[i] = f;
 		}
@@ -149,7 +171,7 @@ static PyObject *_rsky_or_f(PyObject *self, PyObject *args, int f_only)
 static PyObject *_rsky(PyObject *self, PyObject *args)
 {
 	return _rsky_or_f(self, args, 0);
-} 
+}
 
 
 
@@ -182,7 +204,7 @@ static PyMethodDef _rsky_methods[] = {
 		PyModuleDef_HEAD_INIT,
 		"_rsky",
 		_rsky_doc,
-		-1, 
+		-1,
 		_rsky_methods
 	};
 
@@ -194,7 +216,7 @@ static PyMethodDef _rsky_methods[] = {
 		{
 			return NULL;
 		}
-		import_array(); 
+		import_array();
 		return module;
 	}
 #else
@@ -204,4 +226,3 @@ static PyMethodDef _rsky_methods[] = {
 	  import_array();
 	}
 #endif
-

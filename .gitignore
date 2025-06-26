@@ -11,8 +11,12 @@ build/*
 *.blg
 *.eps
 *.txt
+.coverage
+.idea/
 
 dist
 MANIFEST
 catwoman_package.egg-info
 *.sh
+batman_package.egg-info
+.DS_Store
